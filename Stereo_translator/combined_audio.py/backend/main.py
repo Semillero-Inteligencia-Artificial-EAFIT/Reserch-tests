@@ -13,30 +13,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-AUDIO_FILE = "shared_audio.raw"
+audio_queue = asyncio.Queue()
 
 
 @app.websocket("/ws/record")
 async def record_audio(websocket: WebSocket):
     await websocket.accept()
-    with open(AUDIO_FILE, "wb") as f:
-        while True:
-            data = await websocket.receive_bytes()
-            samples = np.frombuffer(data, dtype=np.int16)
-            inverted = (samples * -1).astype(np.int16)
-            f.write(inverted.tobytes())
+    while True:
+        data = await websocket.receive_bytes()
+        samples = np.frombuffer(data, dtype=np.int16)
+        inverted = (samples * -1).astype(np.int16)
+        await audio_queue.put(inverted.tobytes())
 
 
 @app.websocket("/ws/stream")
 async def stream_audio(websocket: WebSocket):
     await websocket.accept()
-    with open(AUDIO_FILE, "rb") as f:
-        while True:
-            chunk = f.read(4096)
-            if not chunk:
-                break
-            await websocket.send_bytes(chunk)
-            await asyncio.sleep(0.01)
+    while True:
+        chunk = await audio_queue.get()
+        await websocket.send_bytes(chunk)
 
 
 if __name__ == "__main__":
